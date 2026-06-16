@@ -1,0 +1,12 @@
+body { margin: 0; overflow: hidden; background: #111; }
+canvas { display: block; width: 100vw; height: 100vh; }
+#ui {
+    position: absolute; top: 20px; left: 20px;
+    color: #0f0; font-family: 'courier new', monospace;
+    font-size: 20px; pointer-events: none;
+}
+/* курсор в центре для точной работы с мелкими деталями */
+body::after {
+    content: "+"; position: absolute; top: 50%; left: 50%;
+    color: white; font-size: 20px; transform: translate(-50%, -50%);
+}
