@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>Сервисный Центр v5.2 — Сохранения</title>
+    <title>Сервисный Центр v5.4 — Полный фикс</title>
     <style>
         :root {
             --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -32,6 +32,20 @@
             top: 0;
             left: 0;
             z-index: 1;
+        }
+        #crosshair {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 8px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            z-index: 10;
+            pointer-events: none;
+            box-shadow: 0 0 12px rgba(255, 255, 255, 0.5);
+            display: block;
         }
         #hud {
             position: fixed;
@@ -74,6 +88,25 @@
             transition: opacity 0.3s;
         }
         #save-indicator.show {
+            opacity: 1;
+        }
+        #interact-hint {
+            position: fixed;
+            top: 55%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: #fff;
+            padding: 6px 16px;
+            border-radius: 16px;
+            font-size: 12px;
+            z-index: 10;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.15s;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        #interact-hint.visible {
             opacity: 1;
         }
         #mobile-controls {
@@ -161,11 +194,6 @@
             border-bottom: 1px solid #333;
             padding-bottom: 5px;
         }
-        .panel h3 {
-            font-size: 13px;
-            color: #ccc;
-            margin: 6px 0;
-        }
         .panel button {
             background: #e67e22;
             color: #fff;
@@ -207,22 +235,6 @@
             margin: 6px 0;
             border: 1px solid #383838;
             cursor: pointer;
-            transition: all 0.15s;
-        }
-        .save-slot:hover,
-        .save-slot:active {
-            border-color: #e67e22;
-            background: #2a2a2a;
-        }
-        .save-slot .slot-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 4px;
-        }
-        .save-slot .slot-info {
-            font-size: 10px;
-            color: #888;
         }
         .device-3d-view {
             background: #0d0d0d;
@@ -240,7 +252,7 @@
             transform: translate(-50%, -50%);
             width: 55%;
             height: 70%;
-            background: linear-gradient(160deg, #2a2a2a 0%, #1a1a1a 100%);
+            background: linear-gradient(160deg, #2a2a2a, #1a1a1a);
             border-radius: 18px;
             border: 3px solid #555;
         }
@@ -261,7 +273,7 @@
             transform: translate(-50%, -50%);
             width: 70%;
             height: 60%;
-            background: linear-gradient(160deg, #2a2a2a 0%, #1a1a1a 100%);
+            background: linear-gradient(160deg, #2a2a2a, #1a1a1a);
             border-radius: 14px;
             border: 3px solid #555;
         }
@@ -342,7 +354,6 @@
             }
             50% {
                 background: rgba(255, 0, 0, 0.95);
-                box-shadow: 0 0 30px rgba(255, 0, 0, 1);
             }
         }
         .component-replace {
@@ -358,7 +369,6 @@
             font-size: 11px;
             font-weight: 700;
             color: #fff;
-            text-shadow: 0 0 6px rgba(0, 0, 0, 0.9);
         }
         .device-card {
             background: #222;
@@ -372,6 +382,8 @@
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
+    <div id="crosshair"></div>
+    <div id="interact-hint"></div>
     <div id="save-indicator">💾 Сохранено</div>
     <div id="hud">
         <div class="hud-item hud-money">💰 <span id="moneyDisplay">15000</span></div>
@@ -405,6 +417,7 @@
             const canvas = document.getElementById('gameCanvas');
             const ctx = canvas.getContext('2d', { alpha: false });
             const overlay = document.getElementById('overlay');
+            const interactHint = document.getElementById('interact-hint');
             const moneyDisplay = document.getElementById('moneyDisplay');
             const ordersCountDisplay = document.getElementById('ordersCount');
             const repDisplay = document.getElementById('repDisplay');
@@ -412,14 +425,17 @@
             const saveIndicator = document.getElementById('save-indicator');
             const interactBtn = document.getElementById('interact-btn');
             const mobileControls = document.getElementById('mobile-controls');
+            const crosshair = document.getElementById('crosshair');
             const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent) || window.innerWidth < 768;
 
             if (isMobile) {
                 mobileControls.style.display = 'flex';
                 interactBtn.style.display = 'flex';
+                crosshair.style.display = 'none';
             }
 
             let W, H, halfW, halfH;
+
             function resize() {
                 W = canvas.width = window.innerWidth;
                 H = canvas.height = window.innerHeight;
@@ -430,7 +446,7 @@
             window.addEventListener('resize', resize);
             window.addEventListener('orientationchange', () => setTimeout(resize, 300));
 
-            const defaultState = () => ({
+            const gameState = {
                 money: 15000,
                 reputation: 50,
                 orders: [],
@@ -446,9 +462,8 @@
                 retokFollowers: 0,
                 retokPosts: [],
                 timestamp: Date.now(),
-            });
+            };
 
-            const gameState = defaultState();
             let detailedRepair = null;
             let goproRecording = false;
             let goproFootage = [];
@@ -458,7 +473,8 @@
             let notification = '';
             let notificationTimer = 0;
             let activePanel = null;
-            const keys = {};
+            let mouseLocked = false;
+            const keyState = {};
             let touchId = null;
             let touchStartX = 0;
             let autoSaveTimer = 0;
@@ -543,8 +559,7 @@
             // ============ СИСТЕМА СОХРАНЕНИЙ ============
             function getSaveSlots() {
                 try {
-                    const slots = JSON.parse(localStorage.getItem('repairSim_saves') || '{}');
-                    return slots;
+                    return JSON.parse(localStorage.getItem('repairSim_saves') || '{}');
                 } catch { return {}; }
             }
 
@@ -561,7 +576,7 @@
                     goproRecording,
                     goproFootage: goproFootage.map(f => ({ ...f })),
                     timestamp: Date.now(),
-                    version: '5.2',
+                    version: '5.4',
                 };
                 slots[`slot_${slotNum}`] = saveData;
                 try {
@@ -586,9 +601,6 @@
                 goproRecording = saveData.goproRecording || false;
                 goproFootage = saveData.goproFootage || [];
                 currentMap = maps[gameState.currentMap] || maps['service_center'];
-                if (detailedRepair && detailedRepair.screws) {
-                    detailedRepair.screws = detailedRepair.screws.map(s => ({ ...s }));
-                }
                 wallReady = false;
                 updateHUD();
                 goproHud.style.display = goproRecording ? 'inline' : 'none';
@@ -613,7 +625,8 @@
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `repair-sim-save-${slotNum}-${new Date().toISOString().slice(0,10)}.json`;
+                a.download =
+                    `repair-sim-save-${slotNum}-${new Date().toISOString().slice(0, 10)}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
                 showNotification('📥 Сохранение скачано');
@@ -678,11 +691,11 @@
                     const day = hasData ? `День ${data.dayCount}` : '';
                     html += `
                 <div class="save-slot">
-                    <div class="slot-header">
+                    <div class="slot-header" style="display:flex;justify-content:space-between;">
                         <b>📁 Слот ${i} ${i===0?'(Авто)':''}</b>
                         <span style="font-size:10px;color:#888;">${time}</span>
                     </div>
-                    <div class="slot-info">${hasData?`💰 ${money} | 📅 ${day} | ⭐ ${data.reputation}`:'Пустой слот'}</div>
+                    <div style="font-size:10px;color:#888;">${hasData?`💰 ${money} | 📅 ${day} | ⭐ ${data.reputation}`:'Пустой слот'}</div>
                     <div style="margin-top:6px;">
                         <button onclick="saveGame(${i})" class="green small">💾 Сохранить</button>
                         ${hasData?`<button onclick="loadGame(${i})" class="blue small">📂 Загрузить</button>
@@ -703,20 +716,24 @@
                 gameState.playerY = currentMap.sy;
                 gameState.playerAngle = currentMap.sa;
                 closeAllPanels();
-                if (!isMobile && !overlay.classList.contains('active')) setTimeout(() => canvas.requestPointerLock(),
-                    200);
+                if (document.pointerLockElement) document.exitPointerLock();
+                mouseLocked = false;
+                if (!isMobile && !overlay.classList.contains('active')) {
+                    setTimeout(() => canvas.requestPointerLock(), 200);
+                }
             }
 
             const rayResult = { d: 0, s: 0 };
+
             function castRay(angle) {
-                const px = gameState.playerX,
-                    py = gameState.playerY;
-                const rdx = Math.cos(angle),
-                    rdy = Math.sin(angle);
-                let mx = px | 0,
-                    my = py | 0;
-                const ddx = Math.abs(1 / (rdx || 0.0001)),
-                    ddy = Math.abs(1 / (rdy || 0.0001));
+                const px = gameState.playerX;
+                const py = gameState.playerY;
+                const rdx = Math.cos(angle);
+                const rdy = Math.sin(angle);
+                let mx = px | 0;
+                let my = py | 0;
+                const ddx = Math.abs(1 / (rdx || 0.0001));
+                const ddy = Math.abs(1 / (rdy || 0.0001));
                 let sx, sy, sdx, sdy;
                 if (rdx < 0) { sx = -1;
                     sdx = (px - mx) * ddx; } else { sx = 1;
@@ -724,8 +741,8 @@
                 if (rdy < 0) { sy = -1;
                     sdy = (py - my) * ddy; } else { sy = 1;
                     sdy = (my + 1 - py) * ddy; }
-                let side = 0,
-                    hit = false;
+                let side = 0;
+                let hit = false;
                 const md = currentMap.data;
                 let steps = 45;
                 while (!hit && steps-- > 0) {
@@ -745,8 +762,8 @@
 
             const wallCanvas = document.createElement('canvas');
             const wallCtx = wallCanvas.getContext('2d');
-            let wallReady = false,
-                lastWallKey = '';
+            let wallReady = false;
+            let lastWallKey = '';
 
             function preRenderWalls() {
                 const key = `${currentMap.wallRGB}|${!!currentMap.isOutdoor}|${W}`;
@@ -754,9 +771,9 @@
                 lastWallKey = key;
                 wallCanvas.width = W;
                 wallCanvas.height = H;
-                const wr = currentMap.wallRGB[0],
-                    wg = currentMap.wallRGB[1],
-                    wb = currentMap.wallRGB[2];
+                const wr = currentMap.wallRGB[0];
+                const wg = currentMap.wallRGB[1];
+                const wb = currentMap.wallRGB[2];
                 wallCtx.fillStyle =
                     `rgb(${currentMap.ceiling[0]},${currentMap.ceiling[1]},${currentMap.ceiling[2]})`;
                 wallCtx.fillRect(0, 0, W, halfH);
@@ -776,8 +793,8 @@
                 for (let i = 0; i < numRays; i++) {
                     const ray = castRay(gameState.playerAngle - fov / 2 + i * rayStep);
                     const wh = H / ray.d;
-                    let ds = (halfH - wh / 2) | 0,
-                        de = (halfH + wh / 2) | 0;
+                    let ds = (halfH - wh / 2) | 0;
+                    let de = (halfH + wh / 2) | 0;
                     if (ds < 0) ds = 0;
                     if (de > H) de = H;
                     let b = 1 - Math.min(ray.d / 18, 1);
@@ -794,34 +811,34 @@
                 const fov = (Math.PI / 2) * (isMobile ? 1.15 : 1.4);
                 const pAngle = gameState.playerAngle;
                 const sorted = currentMap.objects.map(o => {
-                    const dx = o.x - gameState.playerX,
-                        dy = o.y - gameState.playerY;
+                    const dx = o.x - gameState.playerX;
+                    const dy = o.y - gameState.playerY;
                     return { o, d: Math.sqrt(dx * dx + dy * dy), dx, dy };
                 }).sort((a, b) => b.d - a.d);
                 const numRays = Math.max(1, W >> (isMobile ? 2 : 1));
                 const rayStep = fov / numRays;
                 const pw = 2;
-                const pdx = Math.cos(pAngle),
-                    pdy = Math.sin(pAngle);
-                const plx = -Math.sin(pAngle) * 0.66,
-                    ply = Math.cos(pAngle) * 0.66;
+                const pdx = Math.cos(pAngle);
+                const pdy = Math.sin(pAngle);
+                const plx = -Math.sin(pAngle) * 0.66;
+                const ply = Math.cos(pAngle) * 0.66;
                 const invDet = 1 / (plx * pdy - pdx * ply);
                 for (const { o, d, dx, dy } of sorted) {
                     if (d < 0.2 || d > 25) continue;
-                    const tx = invDet * (pdy * dx - pdx * dy),
-                        ty = invDet * (-ply * dx + plx * dy);
+                    const tx = invDet * (pdy * dx - pdx * dy);
+                    const ty = invDet * (-ply * dx + plx * dy);
                     if (ty <= 0.05) continue;
-                    const sh = (H / ty * 0.6) | 0,
-                        sx = (halfW * (1 + tx / ty)) | 0,
-                        dsY = (halfH - sh / 2) | 0;
+                    const sh = (H / ty * 0.6) | 0;
+                    const sx = (halfW * (1 + tx / ty)) | 0;
+                    const dsY = (halfH - sh / 2) | 0;
                     if (sx + sh < 0 || sx > W || dsY + sh < 0 || dsY > H) continue;
                     const colors = { workbench: '#c8956c', counter: '#d4c5b0', shelf: '#a08060', door: '#6b4226',
                         bed: '#e8d5c4', stove: '#555', own_pc: '#4488cc', retok_pc: '#ff4488', billboard: '#fff',
                         house: '#d4a574', tree: '#3a7a3a' };
                     const col = colors[o.t] || '#888';
-                    const cr = parseInt(col.slice(1, 3), 16),
-                        cg = parseInt(col.slice(3, 5), 16),
-                        cb = parseInt(col.slice(5, 7), 16);
+                    const cr = parseInt(col.slice(1, 3), 16);
+                    const cg = parseInt(col.slice(3, 5), 16);
+                    const cb = parseInt(col.slice(5, 7), 16);
                     const bright = Math.min(1, 1 - d / 14);
                     ctx.fillStyle = `rgb(${(cr*bright)|0},${(cg*bright)|0},${(cb*bright)|0})`;
                     for (let sx2 = Math.max(0, sx); sx2 < Math.min(W, sx + sh); sx2 += pw) {
@@ -839,27 +856,66 @@
                 if (frameSkip % 20 === 0) updateHUD();
             }
 
+            // ============ УПРАВЛЕНИЕ (ПОЛНЫЙ ФИКС WASD + E) ============
             document.addEventListener('keydown', e => {
                 const k = e.key.toLowerCase();
-                keys[k] = true;
+                keyState[k] = true;
+                // Поддержка русской раскладки
+                if (k === 'ц') keyState['w'] = true;
+                if (k === 'ы') keyState['s'] = true;
+                if (k === 'ф') keyState['a'] = true;
+                if (k === 'в') keyState['d'] = true;
+                if (k === 'у') keyState['e'] = true;
+                // Клавиша E — взаимодействие
+                if ((k === 'e' || k === 'у') && !overlay.classList.contains('active') && interactCooldown <= 0) {
+                    interactWithNearest();
+                    interactCooldown = 12;
+                }
                 if (k === 'g' && !overlay.classList.contains('active') && gameState.hasGoPro) toggleGoPro();
-                if (k === 'escape') { closeAllPanels();
-                    document.exitPointerLock(); }
-                if (k === 'i' && !overlay.classList.contains('active')) openInventory();
-                if (k === 'b' && !overlay.classList.contains('active')) openPCBuildPanel();
+                if (k === 'escape') {
+                    if (activePanel) { closeAllPanels(); return; }
+                    document.exitPointerLock();
+                    mouseLocked = false;
+                }
+                if ((k === 'i' || k === 'ш') && !overlay.classList.contains('active')) openInventory();
+                if ((k === 'b' || k === 'и') && !overlay.classList.contains('active') && gameState.currentMap ===
+                    'service_center') openPCBuildPanel();
                 if (k === 'f5' && !overlay.classList.contains('active')) openSavePanel();
             });
-            document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+            document.addEventListener('keyup', e => {
+                const k = e.key.toLowerCase();
+                keyState[k] = false;
+                if (k === 'ц') keyState['w'] = false;
+                if (k === 'ы') keyState['s'] = false;
+                if (k === 'ф') keyState['a'] = false;
+                if (k === 'в') keyState['d'] = false;
+                if (k === 'у') keyState['e'] = false;
+            });
             document.addEventListener('mousemove', e => {
                 if (document.pointerLockElement === canvas && !overlay.classList.contains('active')) {
                     gameState.playerAngle += e.movementX * 0.002;
+                    if (gameState.playerAngle > Math.PI * 2) gameState.playerAngle -= Math.PI * 2;
+                    if (gameState.playerAngle < 0) gameState.playerAngle += Math.PI * 2;
                     wallReady = false;
                 }
             });
             canvas.addEventListener('click', () => {
-                if (!isMobile && !overlay.classList.contains('active')) canvas.requestPointerLock();
+                if (!isMobile && !overlay.classList.contains('active') && document.pointerLockElement !==
+                    canvas) {
+                    canvas.requestPointerLock();
+                }
             });
+            document.addEventListener('pointerlockchange', () => {
+                mouseLocked = document.pointerLockElement === canvas;
+            });
+            // Авто-захват при запуске
+            if (!isMobile) {
+                setTimeout(() => {
+                    if (!overlay.classList.contains('active')) canvas.requestPointerLock();
+                }, 500);
+            }
 
+            // Мобильные контролы
             if (isMobile) {
                 canvas.addEventListener('touchstart', e => {
                     if (overlay.classList.contains('active') || touchId !== null) return;
@@ -880,16 +936,16 @@
                     for (const t of e.changedTouches)
                         if (t.identifier === touchId) touchId = null;
                 });
-                document.getElementById('btn-up').addEventListener('pointerdown', () => keys['w'] = true);
-                document.getElementById('btn-up').addEventListener('pointerup', () => keys['w'] = false);
-                document.getElementById('btn-down').addEventListener('pointerdown', () => keys['s'] = true);
-                document.getElementById('btn-down').addEventListener('pointerup', () => keys['s'] = false);
-                document.getElementById('btn-left').addEventListener('pointerdown', () => keys['a'] = true);
-                document.getElementById('btn-left').addEventListener('pointerup', () => keys['a'] = false);
-                document.getElementById('btn-right').addEventListener('pointerdown', () => keys['d'] = true);
-                document.getElementById('btn-right').addEventListener('pointerup', () => keys['d'] = false);
-                document.getElementById('btn-run').addEventListener('pointerdown', () => keys['shift'] = true);
-                document.getElementById('btn-run').addEventListener('pointerup', () => keys['shift'] = false);
+                document.getElementById('btn-up').addEventListener('pointerdown', () => keyState['w'] = true);
+                document.getElementById('btn-up').addEventListener('pointerup', () => keyState['w'] = false);
+                document.getElementById('btn-down').addEventListener('pointerdown', () => keyState['s'] = true);
+                document.getElementById('btn-down').addEventListener('pointerup', () => keyState['s'] = false);
+                document.getElementById('btn-left').addEventListener('pointerdown', () => keyState['a'] = true);
+                document.getElementById('btn-left').addEventListener('pointerup', () => keyState['a'] = false);
+                document.getElementById('btn-right').addEventListener('pointerdown', () => keyState['d'] = true);
+                document.getElementById('btn-right').addEventListener('pointerup', () => keyState['d'] = false);
+                document.getElementById('btn-run').addEventListener('pointerdown', () => keyState['shift'] = true);
+                document.getElementById('btn-run').addEventListener('pointerup', () => keyState['shift'] = false);
                 interactBtn.addEventListener('pointerdown', () => {
                     if (!overlay.classList.contains('active') && interactCooldown <= 0) {
                         interactWithNearest();
@@ -914,19 +970,37 @@
             }
 
             function interactWithNearest() {
-                let nearest = null,
-                    nd = 2.4;
+                let nearest = null;
+                let nd = 2.4;
+                const pa = gameState.playerAngle;
+                const px = gameState.playerX;
+                const py = gameState.playerY;
                 for (const o of currentMap.objects) {
                     if (!o.a) continue;
-                    const dist = Math.hypot(o.x - gameState.playerX, o.y - gameState.playerY);
-                    if (dist < nd) { nearest = o;
-                        nd = dist; }
+                    const dx = o.x - px;
+                    const dy = o.y - py;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < nd) {
+                        const ato = Math.atan2(dy, dx);
+                        const ad = Math.abs(((ato - pa) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
+                        if (ad < 1.3 || dist < 1.4) { nearest = o;
+                            nd = dist; }
+                    }
                 }
                 if (nearest) {
-                    const actions = { openRepair, openClient, openShop, goOutside: () => switchMap('outside'),
-                        goBackroom: () => switchMap('backroom'), goServiceCenter: () => switchMap('service_center'),
-                        goServiceCenterFromOutside: () => switchMap('service_center'), sleep: sleepAction,
-                        cook: cookAction, useOwnPC: openOwnPC, openReTok };
+                    const actions = {
+                        openRepair,
+                        openClient,
+                        openShop,
+                        goOutside: () => switchMap('outside'),
+                        goBackroom: () => switchMap('backroom'),
+                        goServiceCenter: () => switchMap('service_center'),
+                        goServiceCenterFromOutside: () => switchMap('service_center'),
+                        sleep: sleepAction,
+                        cook: cookAction,
+                        useOwnPC: openOwnPC,
+                        openReTok,
+                    };
                     if (actions[nearest.a]) actions[nearest.a]();
                 }
             }
@@ -935,7 +1009,10 @@
                 document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
                 overlay.classList.remove('active');
                 activePanel = null;
-                if (!isMobile) setTimeout(() => canvas.requestPointerLock(), 100);
+                crosshair.style.display = isMobile ? 'none' : 'block';
+                if (!isMobile && !overlay.classList.contains('active')) {
+                    setTimeout(() => canvas.requestPointerLock(), 150);
+                }
             }
 
             function openPanel(id) {
@@ -943,10 +1020,13 @@
                 document.getElementById(id).classList.add('active');
                 overlay.classList.add('active');
                 activePanel = id;
+                crosshair.style.display = 'none';
+                if (document.pointerLockElement) document.exitPointerLock();
             }
 
             function openRepair() {
-                if (!gameState.orders.some(o => o.status === 'accepted')) { showNotification('Нет заказов!'); return; }
+                if (!gameState.orders.some(o => o.status === 'accepted')) { showNotification(
+                    'Нет принятых заказов!'); return; }
                 openPanel('repairPanel');
                 renderRepairPanel();
             }
@@ -969,6 +1049,7 @@
             function openReTok() { openPanel('retokPanel');
                 renderReTokPanel(); }
 
+            // ============ 3D РЕМОНТ ============
             function openDetailedRepair(orderId) {
                 const order = gameState.orders.find(o => o.id === orderId);
                 if (!order) return;
@@ -1064,18 +1145,19 @@
                 html += '</div><button onclick="closeAllPanels()" class="red small">Отложить</button>';
                 panel.innerHTML = html;
                 setTimeout(() => {
-                    panel.querySelectorAll('.screw-3d').forEach(el => el.addEventListener('click', (e) => { e
-                            .stopPropagation();
-                        clickScrew(parseInt(el.dataset.sid)); }));
-                    panel.querySelectorAll('[data-action="diagnose"]').forEach(el => el.addEventListener('click',
-                        (e) => { e.stopPropagation();
-                        diagnoseFault(); }));
-                    panel.querySelectorAll('[data-action="replace"]').forEach(el => el.addEventListener('click',
-                        (e) => { e.stopPropagation();
-                        replaceFaultyPart(); }));
-                    panel.querySelectorAll('[data-action="syringe"]').forEach(el => el.addEventListener('click',
-                        (e) => { e.stopPropagation();
-                        useSyringeOnFault(); }));
+                    panel.querySelectorAll('.screw-3d').forEach(el => el.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        clickScrew(parseInt(el.dataset.sid));
+                    }));
+                    panel.querySelectorAll('[data-action="diagnose"]').forEach(el => el.addEventListener(
+                        'click', (e) => { e.stopPropagation();
+                            diagnoseFault(); }));
+                    panel.querySelectorAll('[data-action="replace"]').forEach(el => el.addEventListener(
+                        'click', (e) => { e.stopPropagation();
+                            replaceFaultyPart(); }));
+                    panel.querySelectorAll('[data-action="syringe"]').forEach(el => el.addEventListener(
+                        'click', (e) => { e.stopPropagation();
+                            useSyringeOnFault(); }));
                 }, 60);
             }
 
@@ -1135,34 +1217,74 @@
                 closeAllPanels();
             }
 
+            // ============ ЗАКАЗЫ (ФИКС ФОРМУЛИРОВОК) ============
             const deviceModels = {
-                phone: ['iPhone 13', 'Samsung S23', 'Xiaomi 13T', 'Pixel 7'],
-                tablet: ['iPad Air', 'Samsung Tab S9'],
-                pc: ['Ноутбук Asus', 'MacBook Pro', 'Монитор Dell'],
+                phone: ['iPhone 13', 'iPhone 14 Pro', 'Samsung Galaxy S23', 'Samsung A54', 'Xiaomi 13T', 'Pixel 7',
+                    'OnePlus 11'
+                ],
+                tablet: ['iPad Air', 'iPad Pro', 'Samsung Tab S9', 'Xiaomi Pad 6', 'Lenovo Tab P12'],
+                pc: ['Ноутбук Asus', 'Ноутбук HP', 'Ноутбук Lenovo', 'MacBook Air', 'MacBook Pro', 'ПК сборка',
+                    'Монитор Dell'
+                ],
             };
             const malfunctions = {
-                phone: ['Разбит экран', 'Не заряжается', 'Сел аккумулятор'],
-                tablet: ['Разбит экран', 'Не заряжается'],
-                pc: ['Не включается', 'Перегрев', 'Сломан экран', 'Нет изображения'],
+                phone: [
+                    'Разбит экран', 'Не заряжается', 'Попала вода', 'Не работает динамик',
+                    'Не ловит сеть', 'Изношен аккумулятор', 'Не включается', 'Сломан разъём зарядки',
+                    'Треснуло стекло камеры', 'Перегрев', 'Зависает система'
+                ],
+                tablet: [
+                    'Разбит экран', 'Не заряжается', 'Попала вода', 'Не работает тачскрин',
+                    'Изношен аккумулятор', 'Не включается', 'Сломан разъём зарядки', 'Тормозит система'
+                ],
+                pc: [
+                    'Не включается', 'Синий экран смерти', 'Перегрев процессора', 'Шумит вентилятор',
+                    'Сломан экран', 'Не заряжается батарея', 'Попала жидкость', 'Медленно работает',
+                    'Нет изображения', 'Сломана клавиатура'
+                ],
             };
-            const repairPrices = { 'Разбит экран': { p: 4500 }, 'Не заряжается': { p: 2000 }, 'Сел аккумулятор': { p: 2800 },
-                'Не включается': { p: 3000 }, 'Перегрев': { p: 1500 }, 'Сломан экран': { p: 5500 },
-            'Нет изображения': { p: 3000 } };
+            const repairPrices = {
+                'Разбит экран': { p: 4500 },
+                'Не заряжается': { p: 2000 },
+                'Попала вода': { p: 3500 },
+                'Не работает динамик': { p: 1800 },
+                'Не ловит сеть': { p: 2200 },
+                'Изношен аккумулятор': { p: 3200 },
+                'Не включается': { p: 3000 },
+                'Сломан разъём зарядки': { p: 2500 },
+                'Треснуло стекло камеры': { p: 2800 },
+                'Перегрев': { p: 1500 },
+                'Зависает система': { p: 1800 },
+                'Не работает тачскрин': { p: 3500 },
+                'Тормозит система': { p: 1800 },
+                'Синий экран смерти': { p: 2500 },
+                'Перегрев процессора': { p: 1800 },
+                'Шумит вентилятор': { p: 1200 },
+                'Сломан экран': { p: 5500 },
+                'Не заряжается батарея': { p: 2800 },
+                'Попала жидкость': { p: 4000 },
+                'Медленно работает': { p: 2000 },
+                'Нет изображения': { p: 3000 },
+                'Сломана клавиатура': { p: 2200 },
+            };
 
             function generateOrder() {
-                const type = ['phone', 'phone', 'tablet', 'pc'][Math.random() * 4 | 0];
+                const types = ['phone', 'phone', 'phone', 'tablet', 'pc'];
+                const type = types[Math.random() * types.length | 0];
                 const model = deviceModels[type][Math.random() * deviceModels[type].length | 0];
                 const malf = malfunctions[type][Math.random() * malfunctions[type].length | 0];
-                const price = (repairPrices[malf] || { p: 2000 }).p;
-                let unwanted = null,
-                    uprice = 0;
+                const price = (repairPrices[malf] || { p: 2500 }).p;
+                let unwanted = null;
+                let uprice = 0;
                 if (Math.random() < 0.3) {
                     if (Math.random() < 0.2 && !gameState.hasGoPro) {
                         unwanted = { type: 'gopro', model: 'GoPro Hero 11' };
                         uprice = Math.random() < 0.4 ? 0 : (Math.random() * 3000 + 1000) | 0;
                     } else {
                         const ut = ['phone', 'tablet'][Math.random() * 2 | 0];
-                        unwanted = { type: ut, model: deviceModels[ut][Math.random() * deviceModels[ut].length | 0] };
+                        unwanted = { type: ut, model: deviceModels[ut][Math.random() * deviceModels[ut].length |
+                                0
+                            ] };
                         uprice = Math.random() < 0.1 ? 0 : (Math.random() * 6000 + 300) | 0;
                     }
                 }
@@ -1175,45 +1297,69 @@
                     status: 'pending',
                     unwanted,
                     uprice,
-                    client: ['Алексей', 'Мария', 'Дмитрий', 'Ольга'][Math.random() * 4 | 0],
+                    client: ['Алексей', 'Мария', 'Дмитрий', 'Ольга', 'Сергей', 'Анна', 'Иван'][Math.random() * 7 |
+                        0
+                    ],
                 };
             }
 
-            function spawnNewClient() { if (gameState.orders.length < 5) { gameState.orders.push(generateOrder());
-                    showNotification('📱 Клиент!');
-                    updateHUD(); } }
+            function spawnNewClient() {
+                if (gameState.orders.length < 6) {
+                    gameState.orders.push(generateOrder());
+                    showNotification('📱 Новый клиент!');
+                    updateHUD();
+                }
+            }
 
             function renderClientPanel() {
                 const panel = document.getElementById('clientContent');
                 const pending = gameState.orders.filter(o => o.status === 'pending');
                 let h = '<div style="max-height:45vh;overflow-y:auto;">';
-                if (!pending.length) h += '<p>Пусто</p>';
+                if (!pending.length) h += '<p style="color:#999;">Пока никого нет</p>';
                 else
                     for (const o of pending) h += `
-                <div class="device-card"><b>${o.model}</b> (${o.malf}) 💰${o.price}₽
-                ${o.unwanted?`<br><span style="color:#f1c40f;">📦 ${o.unwanted.model} ${o.unwanted.type==='gopro'?'(GoPro!)':''} - ${o.uprice||'Бесплатно'}₽</span>
-                <button onclick="accUnw(${o.id})" class="small green">Взять</button>`:''}
-                <br><button onclick="accOrder(${o.id})" class="green">✅</button>
-                <button onclick="decOrder(${o.id})" class="red small">❌</button></div>`;
+                <div class="device-card">
+                    <b>${o.model}</b><br>
+                    <span style="font-size:10px;">👤 ${o.client} | 🔧 ${o.malf} | 💰 ${o.price}₽</span>
+                    ${o.unwanted?`<br><span style="color:#f1c40f;font-size:10px;">📦 ${o.unwanted.model} ${o.unwanted.type==='gopro'?'(GoPro!)':''} — ${o.uprice===0?'БЕСПЛАТНО':o.uprice+'₽'}</span>
+                    <button onclick="accUnw(${o.id})" class="small green">Взять</button>`:''}
+                    <br>
+                    <button onclick="accOrder(${o.id})" class="green small">✅ Принять</button>
+                    <button onclick="decOrder(${o.id})" class="red small">❌ Отклонить</button>
+                </div>`;
                 h +=
-                    '</div><button onclick="spawnNewClient()" class="blue">📞 Клиент</button> <button onclick="closeAllPanels()" class="red">Закрыть</button>';
+                    '</div><button onclick="spawnNewClient()" class="blue">📞 Вызвать клиента</button> <button onclick="closeAllPanels()" class="red">Закрыть</button>';
                 panel.innerHTML = h;
             }
 
-            function accOrder(id) { const o = gameState.orders.find(o => o.id === id); if (o) { o.status = 'accepted';
+            function accOrder(id) {
+                const o = gameState.orders.find(o => o.id === id);
+                if (o) { o.status = 'accepted';
+                    showNotification('✅ Принято в ремонт');
                     updateHUD();
-                    renderClientPanel(); } }
+                    renderClientPanel(); }
+            }
 
-            function decOrder(id) { gameState.orders = gameState.orders.filter(o => o.id !== id); updateHUD();
-                renderClientPanel(); }
+            function decOrder(id) {
+                gameState.orders = gameState.orders.filter(o => o.id !== id);
+                gameState.reputation = Math.max(0, gameState.reputation - 2);
+                showNotification('❌ Заказ отклонён');
+                updateHUD();
+                renderClientPanel();
+            }
 
             function accUnw(id) {
                 const o = gameState.orders.find(o => o.id === id);
                 if (o && o.unwanted) {
-                    if (o.uprice > 0 && gameState.money < o.uprice) { showNotification('❌ Нет денег'); return; }
+                    if (o.uprice > 0 && gameState.money < o.uprice) { showNotification('❌ Недостаточно денег!'); return; }
                     if (o.uprice > 0) gameState.money -= o.uprice;
-                    if (o.unwanted.type === 'gopro') gameState.hasGoPro = true;
-                    else gameState.inventory.push(o.unwanted);
+                    if (o.unwanted.type === 'gopro') {
+                        gameState.hasGoPro = true;
+                        showNotification('📹 GoPro получен! Нажмите G для записи.');
+                    } else {
+                        gameState.inventory.push({ ...o.unwanted });
+                        showNotification('📦 Устройство в инвентаре');
+                    }
                     o.unwanted = null;
                     updateHUD();
                     renderClientPanel();
@@ -1224,11 +1370,16 @@
                 const panel = document.getElementById('repairContent');
                 const active = gameState.orders.filter(o => o.status === 'accepted');
                 if (!active.length) { panel.innerHTML =
-                        '<p>Нет заказов</p><button onclick="closeAllPanels()" class="red">Закрыть</button>'; return; }
+                        '<p style="color:#999;">Нет принятых заказов</p><button onclick="closeAllPanels()" class="red">Закрыть</button>';
+                    return; }
                 let h = '';
-                for (const o of active) h +=
-                    `<div class="device-card"><b>${o.model}</b> - ${o.malf}<br><button onclick="openDetailedRepair(${o.id})" class="green">🔧 3D Ремонт</button></div>`;
-                h += '<button onclick="closeAllPanels()" class="red">Закрыть</button>';
+                for (const o of active) h += `
+                <div class="device-card">
+                    <b>${o.model}</b> — ${o.malf} | 💰 ${o.price}₽
+                    <br><button onclick="openDetailedRepair(${o.id})" class="green">🔧 3D Ремонт</button>
+                </div>`;
+                h +=
+                    '<button onclick="openPCBuildPanel()" class="blue">🖥️ Сборка ПК</button> <button onclick="closeAllPanels()" class="red">Закрыть</button>';
                 panel.innerHTML = h;
             }
 
@@ -1236,18 +1387,22 @@
                 const panel = document.getElementById('retokContent');
                 let h = `<p>Подписчики: <b>${gameState.retokFollowers}</b></p>`;
                 for (const p of gameState.retokPosts) h +=
-                    `<div class="device-card">🎬 ${p.title} | 👁${p.views} ❤${p.likes}</div>`;
+                    `<div class="device-card">🎬 ${p.title} | 👁 ${p.views} | ❤ ${p.likes}</div>`;
+                if (!gameState.retokPosts.length) h +=
+                '<p style="color:#999;">Нет постов. Снимите ремонт на GoPro!</p>';
                 if (gameState.hasGoPro) h +=
-                    `<p style="color:#00d4ff;">📹 GoPro${goproRecording?' 🔴':''}</p>`;
+                    `<p style="color:#00d4ff;">📹 GoPro${goproRecording?' 🔴 запись...':' (G — начать запись)'}</p>`;
                 h += '<button onclick="closeAllPanels()" class="red">Закрыть</button>';
                 panel.innerHTML = h;
             }
 
-            const pcComp = { cpu: ['i3', 'i5', 'i7'], gpu: ['GTX1660', 'RTX3060'], ram: ['8GB', '16GB', '32GB'],
-                stor: ['512GB', '1TB'], mb: ['B660', 'Z790'], psu: ['550W', '750W'], case: ['Budget', 'Mid'] };
-            const compPrice = { i3: 7500, i5: 12000, i7: 28000, GTX1660: 16000, RTX3060: 28000, '8GB': 2500, '16GB': 4500,
-                '32GB': 9500, '512GB': 3000, '1TB': 5500, B660: 8500, Z790: 18000, '550W': 3500, '750W': 5500, Budget: 2500,
-                Mid: 4500 };
+            const pcComp = { cpu: ['i3-12100F', 'i5-12400F', 'i7-13700K'], gpu: ['GTX 1660S', 'RTX 3060', 'RTX 4070'],
+                ram: ['8GB DDR4', '16GB DDR4', '32GB DDR5'], stor: ['512GB SSD', '1TB SSD'], mb: ['MSI B660',
+                'ASUS Z790'], psu: ['550W', '750W', '850W'], case: ['Budget', 'Mid-Tower', 'Full-Tower'] };
+            const compPrice = { 'i3-12100F': 7500, 'i5-12400F': 12000, 'i7-13700K': 28000, 'GTX 1660S': 16000,
+                'RTX 3060': 28000, 'RTX 4070': 55000, '8GB DDR4': 2500, '16GB DDR4': 4500, '32GB DDR5': 9500,
+                '512GB SSD': 3000, '1TB SSD': 5500, 'MSI B660': 8500, 'ASUS Z790': 18000, '550W': 3500, '750W': 5500,
+                '850W': 7500, 'Budget': 2500, 'Mid-Tower': 4500, 'Full-Tower': 8000 };
             const pcBuild = { cpu: null, gpu: null, ram: null, stor: null, mb: null, psu: null, case: null, prog: 0 };
 
             function renderPCBuildPanel() {
@@ -1255,30 +1410,31 @@
                 let h =
                     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">';
                 for (const k of Object.keys(pcComp)) h +=
-                    `<div style="background:#1a1a1a;border:2px dashed ${pcBuild[k]?'#2ecc71':'#444'};border-radius:6px;padding:8px;text-align:center;cursor:pointer;" onclick="selComp('${k}')"><b>${k}</b><br>${pcBuild[k]||'Пусто'}${pcBuild[k]?`<br>${compPrice[pcBuild[k]]}₽`:''}</div>`;
+                    `<div style="background:#1a1a1a;border:2px dashed ${pcBuild[k]?'#2ecc71':'#444'};border-radius:6px;padding:8px;text-align:center;cursor:pointer;" onclick="selComp('${k}')"><b>${k.toUpperCase()}</b><br>${pcBuild[k]||'Пусто'}${pcBuild[k]?`<br><span style="color:#2ecc71;">${compPrice[pcBuild[k]]}₽</span>`:''}</div>`;
                 h += '</div>';
                 let tc = 0;
                 for (const k of Object.keys(pcComp))
                     if (pcBuild[k]) tc += compPrice[pcBuild[k]] || 0;
-                h += `<p>Итого: ${tc}₽ | ${pcBuild.prog}%</p>`;
+                h += `<p><b>Итого:</b> ${tc}₽ | Сборка: ${pcBuild.prog}%</p>`;
                 if (pcBuild.prog >= 100) h +=
-                    `<button onclick="donePC()" class="green">Продать за ${(tc*1.4)|0}₽</button>`;
+                    `<button onclick="donePC()" class="green">✅ Продать за ${(tc*1.4)|0}₽</button>`;
                 if (pcBuild.prog < 100 && Object.values(pcBuild).every(v => v)) h +=
-                    '<button onclick="asmPC()" class="blue">Собирать</button>';
-                h += '<button onclick="closeAllPanels()" class="red">Закрыть</button>';
+                    '<button onclick="asmPC()" class="blue">🔧 Собирать +25%</button>';
+                h +=
+                    '<button onclick="resetPC()" class="red small">Сброс</button> <button onclick="closeAllPanels()" class="red">Закрыть</button>';
                 panel.innerHTML = h;
             }
 
             function selComp(k) {
                 const panel = document.getElementById('pcBuildContent');
-                let h = `<h3>${k}:</h3>`;
+                let h = `<h3>Выберите ${k}:</h3>`;
                 for (const o of pcComp[k]) h +=
-                    `<button onclick="pickComp('${k}','${o}',${compPrice[o]})" class="small">${o} ${compPrice[o]}₽</button><br>`;
+                    `<button onclick="pickComp('${k}','${o}',${compPrice[o]})" class="small">${o} — ${compPrice[o]}₽</button><br>`;
                 h += '<button onclick="renderPCBuildPanel()" class="red small">Назад</button>';
                 panel.innerHTML = h;
             }
 
-            function pickComp(k, v, p) { if (gameState.money < p) return;
+            function pickComp(k, v, p) { if (gameState.money < p) { showNotification('❌ Недостаточно денег'); return; }
                 gameState.money -= p;
                 pcBuild[k] = v;
                 updateHUD();
@@ -1287,43 +1443,57 @@
             function asmPC() { pcBuild.prog = Math.min(100, pcBuild.prog + 25);
                 renderPCBuildPanel(); }
 
-            function donePC() { let tc = 0;
+            function donePC() {
+                let tc = 0;
                 for (const k of Object.keys(pcComp))
                     if (pcBuild[k]) tc += compPrice[pcBuild[k]] || 0;
                 gameState.money += (tc * 1.4) | 0;
                 for (const k of Object.keys(pcBuild)) pcBuild[k] = null;
                 pcBuild.prog = 0;
                 updateHUD();
+                renderPCBuildPanel();
+            }
+
+            function resetPC() { for (const k of Object.keys(pcBuild)) pcBuild[k] = null;
+                pcBuild.prog = 0;
                 renderPCBuildPanel(); }
 
             function renderShopPanel() {
                 const panel = document.getElementById('shopContent');
-                let h = '';
-                for (const [n, p] of [
-                        ['Экран', 1800],
-                        ['Аккум', 1200],
-                        ['Термопаста', 300],
-                        ['USB-C', 600]
-                    ]) h +=
-                    `<div class="device-card" style="display:flex;justify-content:space-between;"><span>🔩 ${n} ${p}₽</span><button onclick="buyPart('${n}',${p})" class="small green">Купить</button></div>`;
-                h += '<button onclick="closeAllPanels()" class="red">Закрыть</button>';
+                const parts = [
+                    ['Экранный модуль', 1800],
+                    ['Аккумулятор', 1200],
+                    ['Разъём USB-C', 600],
+                    ['Динамик', 500],
+                    ['Термопаста', 300],
+                    ['SSD 512GB', 3000],
+                    ['Набор отвёрток', 1500]
+                ];
+                let h = '<div style="max-height:40vh;overflow-y:auto;">';
+                for (const [n, p] of parts) h +=
+                    `<div class="device-card" style="display:flex;justify-content:space-between;"><span>🔩 ${n}</span><span style="color:#2ecc71;">${p}₽</span> <button onclick="buyPart('${n}',${p})" class="small green">Купить</button></div>`;
+                h += '</div><button onclick="closeAllPanels()" class="red">Закрыть</button>';
                 panel.innerHTML = h;
             }
 
-            function buyPart(n, p) { if (gameState.money < p) return;
+            function buyPart(n, p) { if (gameState.money < p) { showNotification('❌ Недостаточно денег'); return; }
                 gameState.money -= p;
-                gameState.inventory.push({ name: n, price: p });
+                gameState.inventory.push({ type: 'part', name: n, price: p });
                 updateHUD();
                 renderShopPanel(); }
 
             function renderInventoryPanel() {
                 const panel = document.getElementById('inventoryContent');
                 if (!gameState.inventory.length) { panel.innerHTML =
-                        '<p>Пусто</p><button onclick="closeAllPanels()" class="red">Закрыть</button>'; return; }
-                let h = '';
-                for (let i = 0; i < gameState.inventory.length; i++) h +=
-                    `<div class="device-card" style="display:flex;justify-content:space-between;">${gameState.inventory[i].name||gameState.inventory[i].model} <button onclick="sellInv(${i})" class="small blue">Продать</button></div>`;
-                h += '<button onclick="closeAllPanels()" class="red">Закрыть</button>';
+                        '<p style="color:#999;">Инвентарь пуст</p><button onclick="closeAllPanels()" class="red">Закрыть</button>';
+                    return; }
+                let h = '<div style="max-height:40vh;overflow-y:auto;">';
+                for (let i = 0; i < gameState.inventory.length; i++) {
+                    const it = gameState.inventory[i];
+                    h +=
+                        `<div class="device-card" style="display:flex;justify-content:space-between;"><span>${it.type==='part'?'🔩':'📱'} ${it.name||it.model}${it.price?` (${it.price}₽)`:''}</span><button onclick="sellInv(${i})" class="small blue">Продать</button></div>`;
+                }
+                h += '</div><button onclick="closeAllPanels()" class="red">Закрыть</button>';
                 panel.innerHTML = h;
             }
 
@@ -1335,29 +1505,38 @@
             function sleepAction() { gameState.timeOfDay += 8; if (gameState.timeOfDay >= 24) { gameState.timeOfDay = 8;
                     gameState.dayCount++; if (Math.random() < 0.5) spawnNewClient(); } }
 
-            function cookAction() { if (gameState.money >= 200) gameState.money -= 200; }
+            function cookAction() { if (gameState.money >= 200) { gameState.money -= 200;
+                    showNotification('🍳 Приготовили поесть. -200₽'); } }
 
             function renderOwnPCPanel() {
                 document.getElementById('pcOwnContent').innerHTML = `
-            <div style="background:#0a0a1a;padding:12px;border-radius:8px;">
-                <h3>💻 FirstDome OS</h3><p style="color:#0f0;">> dev: t.me/dtstudios</p>
-                <p>> ${gameState.money}₽ | ReTok: ${gameState.retokFollowers}</p>
-                <button onclick="playMini()" class="blue small">🎮 Мини-игра</button>
-            </div><button onclick="closeAllPanels()" class="red">Выкл</button>`;
+            <div style="background:#0a0a1a;border-radius:10px;padding:15px;text-align:center;border:2px solid #333;">
+                <h3 style="color:#44aacc;">💻 FirstDome OS v2.4</h3>
+                <div style="background:#000;border-radius:6px;padding:10px;margin:8px 0;font-family:monospace;color:#0f0;text-align:left;">
+                    <p>> CPU: Intel i5-12400F</p>
+                    <p>> RAM: 16GB DDR4</p>
+                    <p>> GPU: RTX 3060</p>
+                    <p>> Деньги: ${gameState.money}₽</p>
+                    <p>> Репутация: ${gameState.reputation}</p>
+                    <p>> ReTok подписчики: ${gameState.retokFollowers}</p>
+                    <p style="color:#ff0;">> dev: https://t.me/dtstudios</p>
+                </div>
+                <button onclick="playMini()" class="blue small">🎮 Мини-игра (+₽)</button>
+            </div><button onclick="closeAllPanels()" class="red">Выключить ПК</button>`;
             }
 
-            function playMini() { gameState.money += (Math.random() * 300 + 50) | 0;
+            function playMini() { gameState.money += (Math.random() * 400 + 80) | 0;
                 updateHUD();
                 renderOwnPCPanel(); }
 
-            function showNotification(t, d = 1800) { notification = t;
+            function showNotification(t, d = 2000) { notification = t;
                 notificationTimer = d; }
 
             function drawNotification() {
                 if (notificationTimer > 0) {
                     const a = Math.min(1, notificationTimer / 400);
                     ctx.fillStyle = `rgba(0,0,0,${0.8*a})`;
-                    ctx.fillRect(W / 2 - 160, H - 90, 320, 34);
+                    ctx.fillRect(W / 2 - 180, H - 90, 360, 34);
                     ctx.fillStyle = `rgba(255,255,255,${a})`;
                     ctx.font = '11px sans-serif';
                     ctx.textAlign = 'center';
@@ -1381,34 +1560,55 @@
                 if (autoSaveTimer >= AUTO_SAVE_INTERVAL) { autoSaveTimer = 0;
                     autoSave(); }
                 if (overlay.classList.contains('active')) return;
-                const spd = (keys['shift'] ? 0.2 : 0.11) * Math.min(rawDt / 16.67, 2.5);
-                let nx = gameState.playerX,
-                    ny = gameState.playerY;
+                const speedMul = Math.min(rawDt / 16.67, 2.5);
+                const spd = (keyState['shift'] ? 0.22 : 0.12) * speedMul;
+                let nx = gameState.playerX;
+                let ny = gameState.playerY;
                 const pa = gameState.playerAngle;
-                if (keys['w'] || keys['arrowup']) { nx += Math.cos(pa) * spd;
+                if (keyState['w'] || keyState['arrowup'] || keyState['ц']) { nx += Math.cos(pa) * spd;
                     ny += Math.sin(pa) * spd; }
-                if (keys['s'] || keys['arrowdown']) { nx -= Math.cos(pa) * spd;
+                if (keyState['s'] || keyState['arrowdown'] || keyState['ы']) { nx -= Math.cos(pa) * spd;
                     ny -= Math.sin(pa) * spd; }
-                if (keys['a'] || keys['arrowleft']) { nx += Math.cos(pa - 1.57) * spd;
-                    ny += Math.sin(pa - 1.57) * spd; }
-                if (keys['d'] || keys['arrowright']) { nx += Math.cos(pa + 1.57) * spd;
-                    ny += Math.sin(pa + 1.57) * spd; }
-                if (keys['e'] && interactCooldown <= 0 && !overlay.classList.contains('active')) { interactWithNearest();
-                    interactCooldown = 15; }
-                const md = currentMap.data,
-                    inx = nx | 0,
-                    iny = ny | 0;
+                if (keyState['a'] || keyState['arrowleft'] || keyState['ф']) { nx += Math.cos(pa - 1.5708) * spd;
+                    ny += Math.sin(pa - 1.5708) * spd; }
+                if (keyState['d'] || keyState['arrowright'] || keyState['в']) { nx += Math.cos(pa + 1.5708) * spd;
+                    ny += Math.sin(pa + 1.5708) * spd; }
+                if (keyState['q'] || keyState['й']) gameState.playerAngle -= 0.025 * speedMul;
+                const md = currentMap.data;
+                const inx = nx | 0;
+                const iny = ny | 0;
                 if (inx >= 0 && inx < currentMap.width && iny >= 0 && iny < currentMap.height && md[iny][inx] === 0) {
                     gameState.playerX = nx;
                     gameState.playerY = ny;
+                } else {
+                    if (md[gameState.playerY | 0] && md[gameState.playerY | 0][inx] === 0) gameState.playerX = nx;
+                    if (md[iny] && md[iny][gameState.playerX | 0] === 0) gameState.playerY = ny;
                 }
-                if (currentMap.isOutdoor && Math.hypot(gameState.playerX - 4.5, gameState.playerY - 3.5) > 13) {
-                    const a = Math.atan2(gameState.playerY - 3.5, gameState.playerX - 4.5);
-                    gameState.playerX = 4.5 + Math.cos(a) * 13;
-                    gameState.playerY = 3.5 + Math.sin(a) * 13;
+                if (currentMap.isOutdoor) {
+                    const dx = gameState.playerX - 4.5;
+                    const dy = gameState.playerY - 3.5;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist > 13) { gameState.playerX = 4.5 + dx / dist * 13;
+                        gameState.playerY = 3.5 + dy / dist * 13; }
                 }
                 if (interactCooldown > 0) interactCooldown--;
-                if (Math.random() < 0.001 && gameState.orders.length < 5) spawnNewClient();
+                if (Math.random() < 0.001 && gameState.orders.length < 6 && gameState.currentMap === 'service_center')
+                    spawnNewClient();
+                // Обновление подсказки
+                let hintVis = false;
+                for (const o of currentMap.objects) {
+                    if (!o.a) continue;
+                    const dx = o.x - gameState.playerX;
+                    const dy = o.y - gameState.playerY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 2.4) {
+                        const ato = Math.atan2(dy, dx);
+                        const ad = Math.abs(((ato - pa) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
+                        if (ad < 1.3 || dist < 1.4) { hintVis = true;
+                            interactHint.textContent = `[E] ${o.l}`; break; }
+                    }
+                }
+                interactHint.classList.toggle('visible', hintVis);
             }
 
             function gameLoop() { update();
@@ -1416,13 +1616,13 @@
                 drawNotification();
                 requestAnimationFrame(gameLoop); }
 
-            // Экспорт функций в window
+            // Экспорт в window
+            window.openSavePanel = openSavePanel;
             window.saveGame = saveGame;
             window.loadGame = loadGame;
             window.deleteSave = deleteSave;
             window.exportSave = exportSave;
             window.importSave = importSave;
-            window.openSavePanel = openSavePanel;
             window.openDetailedRepair = openDetailedRepair;
             window.openCover3D = openCover3D;
             window.diagnoseFault = diagnoseFault;
@@ -1439,26 +1639,23 @@
             window.pickComp = pickComp;
             window.asmPC = asmPC;
             window.donePC = donePC;
+            window.resetPC = resetPC;
             window.buyPart = buyPart;
             window.sellInv = sellInv;
             window.playMini = playMini;
             window.closeAllPanels = closeAllPanels;
             window.openPCBuildPanel = openPCBuildPanel;
             window.renderSavePanel = renderSavePanel;
-            window.saveGame = saveGame;
-            window.loadGame = loadGame;
-            window.importSave = importSave;
-            window.deleteSave = deleteSave;
-            window.exportSave = exportSave;
 
             function init() {
                 updateHUD();
                 spawnNewClient();
-                setTimeout(() => { if (Math.random() < 0.6) spawnNewClient(); }, 2000);
+                setTimeout(() => { if (Math.random() < 0.7) spawnNewClient(); }, 3000);
                 gameLoop();
             }
             init();
-            console.log('🚀 v5.2 — Сохранения (localStorage + JSON экспорт) готовы!');
+            console.log('🚀 v5.4 — WASD/E FIX + Правильные поломки + Сохранения!');
+            console.log('📱 dev: https://t.me/dtstudios');
         })();
     </script>
 </body>
