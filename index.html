@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>Сервисный Центр v5.1 — Фикс 3D Ремонта</title>
+    <title>Сервисный Центр v5.2 — Сохранения</title>
     <style>
         :root {
             --safe-bottom: env(safe-area-inset-bottom, 0px);
@@ -35,20 +35,19 @@
         }
         #hud {
             position: fixed;
-            bottom: calc(10px + var(--safe-bottom));
-            left: 50%;
-            transform: translateX(-50%);
+            top: 8px;
+            right: 8px;
             z-index: 10;
             pointer-events: none;
             display: flex;
-            gap: 6px;
-            flex-wrap: wrap;
-            justify-content: center;
+            flex-direction: column;
+            gap: 4px;
+            align-items: flex-end;
         }
         .hud-item {
             background: rgba(0, 0, 0, 0.85);
             color: #fff;
-            padding: 4px 9px;
+            padding: 4px 10px;
             border-radius: 10px;
             font-size: 10px;
             font-weight: 600;
@@ -58,6 +57,24 @@
         .hud-money {
             color: #2ecc71;
             font-size: 12px;
+        }
+        #save-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #2ecc71;
+            padding: 8px 18px;
+            border-radius: 16px;
+            font-size: 12px;
+            z-index: 20;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        #save-indicator.show {
+            opacity: 1;
         }
         #mobile-controls {
             position: fixed;
@@ -144,6 +161,11 @@
             border-bottom: 1px solid #333;
             padding-bottom: 5px;
         }
+        .panel h3 {
+            font-size: 13px;
+            color: #ccc;
+            margin: 6px 0;
+        }
         .panel button {
             background: #e67e22;
             color: #fff;
@@ -171,9 +193,36 @@
         .panel button.cyan {
             background: #0088aa;
         }
+        .panel button.yellow {
+            background: #d4a017;
+        }
         .panel button.small {
             padding: 4px 9px;
             font-size: 10px;
+        }
+        .save-slot {
+            background: #222;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 6px 0;
+            border: 1px solid #383838;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .save-slot:hover,
+        .save-slot:active {
+            border-color: #e67e22;
+            background: #2a2a2a;
+        }
+        .save-slot .slot-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        .save-slot .slot-info {
+            font-size: 10px;
+            color: #888;
         }
         .device-3d-view {
             background: #0d0d0d;
@@ -194,7 +243,6 @@
             background: linear-gradient(160deg, #2a2a2a 0%, #1a1a1a 100%);
             border-radius: 18px;
             border: 3px solid #555;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
         }
         .phone-screen {
             position: absolute;
@@ -216,7 +264,6 @@
             background: linear-gradient(160deg, #2a2a2a 0%, #1a1a1a 100%);
             border-radius: 14px;
             border: 3px solid #555;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7);
         }
         .tablet-screen {
             position: absolute;
@@ -267,20 +314,16 @@
             font-weight: bold;
             color: #222;
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.6);
-            text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
         }
         .screw-3d:active {
             background: radial-gradient(circle at 35% 35%, #e67e22, #a04010);
             border-color: #f0903a;
             transform: scale(1.4);
-            box-shadow: 0 0 18px rgba(230, 126, 34, 0.9);
-            z-index: 25;
         }
         .screw-3d.removed {
             background: radial-gradient(circle at 35% 35%, #444, #1a1a1a);
             border-color: #555;
             opacity: 0.35;
-            color: #666;
         }
         .fault-spot {
             position: absolute;
@@ -296,7 +339,6 @@
             0%,
             100% {
                 background: rgba(255, 40, 20, 0.6);
-                box-shadow: 0 0 15px rgba(255, 0, 0, 0.6);
             }
             50% {
                 background: rgba(255, 0, 0, 0.95);
@@ -326,18 +368,17 @@
             border: 1px solid #333;
             cursor: pointer;
         }
-        .device-card:active {
-            border-color: #e67e22;
-        }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
+    <div id="save-indicator">💾 Сохранено</div>
     <div id="hud">
         <div class="hud-item hud-money">💰 <span id="moneyDisplay">15000</span></div>
         <div class="hud-item">📋 <span id="ordersCount">0</span></div>
         <div class="hud-item">⭐ <span id="repDisplay">50</span></div>
         <div class="hud-item" id="goproHud" style="display:none;">📹GoPro</div>
+        <div class="hud-item" style="cursor:pointer;pointer-events:all;" onclick="openSavePanel()">💾</div>
     </div>
     <div id="mobile-controls">
         <button class="ctrl-btn" id="btn-up">▲</button>
@@ -348,6 +389,7 @@
     </div>
     <button id="interact-btn">E</button>
     <div id="overlay">
+        <div class="panel" id="savePanel"><h2>💾 Сохранения</h2><div id="saveContent"></div></div>
         <div class="panel" id="repairPanel"><h2>🔧 Ремонт</h2><div id="repairContent"></div></div>
         <div class="panel" id="detailedRepairPanel"><h2>🔧 3D Ремонт</h2><div id="detailedRepairContent"></div></div>
         <div class="panel" id="pcBuildPanel"><h2>🖥️ Сборка ПК</h2><div id="pcBuildContent"></div></div>
@@ -367,6 +409,7 @@
             const ordersCountDisplay = document.getElementById('ordersCount');
             const repDisplay = document.getElementById('repDisplay');
             const goproHud = document.getElementById('goproHud');
+            const saveIndicator = document.getElementById('save-indicator');
             const interactBtn = document.getElementById('interact-btn');
             const mobileControls = document.getElementById('mobile-controls');
             const isMobile = /Android|iPhone|iPad|iPod|webOS/i.test(navigator.userAgent) || window.innerWidth < 768;
@@ -377,7 +420,6 @@
             }
 
             let W, H, halfW, halfH;
-
             function resize() {
                 W = canvas.width = window.innerWidth;
                 H = canvas.height = window.innerHeight;
@@ -388,35 +430,39 @@
             window.addEventListener('resize', resize);
             window.addEventListener('orientationchange', () => setTimeout(resize, 300));
 
-            const gameState = {
+            const defaultState = () => ({
                 money: 15000,
                 reputation: 50,
                 orders: [],
                 inventory: [],
+                completedToday: 0,
                 playerX: 4.5,
                 playerY: 6.5,
                 playerAngle: 0,
                 currentMap: 'service_center',
-                activePanel: null,
-                keys: {},
-                interactCooldown: 0,
-                notification: '',
-                notificationTimer: 0,
                 timeOfDay: 10,
                 dayCount: 1,
-                lastTime: performance.now(),
-                frameSkip: 0,
-                detailedRepair: null,
                 hasGoPro: false,
-                goproRecording: false,
-                goproFootage: [],
                 retokFollowers: 0,
                 retokPosts: [],
-                fovMultiplier: isMobile ? 1.15 : 1.4,
-                touchId: null,
-                touchStartX: 0,
-                touchStartY: 0,
-            };
+                timestamp: Date.now(),
+            });
+
+            const gameState = defaultState();
+            let detailedRepair = null;
+            let goproRecording = false;
+            let goproFootage = [];
+            let lastTime = performance.now();
+            let frameSkip = 0;
+            let interactCooldown = 0;
+            let notification = '';
+            let notificationTimer = 0;
+            let activePanel = null;
+            const keys = {};
+            let touchId = null;
+            let touchStartX = 0;
+            let autoSaveTimer = 0;
+            const AUTO_SAVE_INTERVAL = 120000;
 
             const maps = {
                 service_center: {
@@ -474,14 +520,9 @@
                 outside: {
                     width: 30,
                     height: 6,
-                    data: [
-                        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                        [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                    ],
+                    data: Array(6).fill().map((_, y) => y === 0 || y === 5 ? Array(30).fill(1) : [1, ...Array(28).fill(0),
+                        1
+                    ]),
                     ceiling: [0x55, 0x88, 0xcc],
                     floor: [0x77, 0x77, 0x77],
                     wallRGB: [0x99, 0x99, 0x99],
@@ -497,10 +538,163 @@
                 },
             };
 
-            let currentMap = maps['service_center'];
-            gameState.playerX = currentMap.sx;
-            gameState.playerY = currentMap.sy;
-            gameState.playerAngle = currentMap.sa;
+            let currentMap = maps[gameState.currentMap];
+
+            // ============ СИСТЕМА СОХРАНЕНИЙ ============
+            function getSaveSlots() {
+                try {
+                    const slots = JSON.parse(localStorage.getItem('repairSim_saves') || '{}');
+                    return slots;
+                } catch { return {}; }
+            }
+
+            function saveGame(slotNum) {
+                const slots = getSaveSlots();
+                const saveData = {
+                    ...gameState,
+                    orders: gameState.orders.map(o => ({ ...o })),
+                    inventory: gameState.inventory.map(i => ({ ...i })),
+                    retokPosts: gameState.retokPosts.map(p => ({ ...p })),
+                    detailedRepair: detailedRepair ? { ...detailedRepair, screws: detailedRepair.screws.map(s => ({ ...
+                            s })) } :
+                        null,
+                    goproRecording,
+                    goproFootage: goproFootage.map(f => ({ ...f })),
+                    timestamp: Date.now(),
+                    version: '5.2',
+                };
+                slots[`slot_${slotNum}`] = saveData;
+                try {
+                    localStorage.setItem('repairSim_saves', JSON.stringify(slots));
+                    flashSaveIndicator();
+                    return true;
+                } catch (e) {
+                    showNotification('❌ Ошибка сохранения!');
+                    return false;
+                }
+            }
+
+            function loadGame(slotNum) {
+                const slots = getSaveSlots();
+                const saveData = slots[`slot_${slotNum}`];
+                if (!saveData) { showNotification('❌ Пустой слот'); return false; }
+                Object.assign(gameState, saveData);
+                gameState.orders = saveData.orders || [];
+                gameState.inventory = saveData.inventory || [];
+                gameState.retokPosts = saveData.retokPosts || [];
+                detailedRepair = saveData.detailedRepair || null;
+                goproRecording = saveData.goproRecording || false;
+                goproFootage = saveData.goproFootage || [];
+                currentMap = maps[gameState.currentMap] || maps['service_center'];
+                if (detailedRepair && detailedRepair.screws) {
+                    detailedRepair.screws = detailedRepair.screws.map(s => ({ ...s }));
+                }
+                wallReady = false;
+                updateHUD();
+                goproHud.style.display = goproRecording ? 'inline' : 'none';
+                flashSaveIndicator('📂 Загружено');
+                return true;
+            }
+
+            function deleteSave(slotNum) {
+                const slots = getSaveSlots();
+                delete slots[`slot_${slotNum}`];
+                localStorage.setItem('repairSim_saves', JSON.stringify(slots));
+                showNotification('🗑️ Слот очищен');
+                renderSavePanel();
+            }
+
+            function exportSave(slotNum) {
+                const slots = getSaveSlots();
+                const saveData = slots[`slot_${slotNum}`];
+                if (!saveData) { showNotification('❌ Пустой слот'); return; }
+                const json = JSON.stringify(saveData, null, 2);
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `repair-sim-save-${slotNum}-${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showNotification('📥 Сохранение скачано');
+            }
+
+            function importSave(slotNum) {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                        try {
+                            const data = JSON.parse(ev.target.result);
+                            if (data.version && data.money !== undefined) {
+                                const slots = getSaveSlots();
+                                slots[`slot_${slotNum}`] = data;
+                                localStorage.setItem('repairSim_saves', JSON.stringify(slots));
+                                showNotification('📤 Сохранение импортировано');
+                                renderSavePanel();
+                            } else {
+                                showNotification('❌ Неверный формат');
+                            }
+                        } catch { showNotification('❌ Ошибка чтения файла'); }
+                    };
+                    reader.readAsText(file);
+                };
+                input.click();
+            }
+
+            function autoSave() {
+                if (activePanel) return;
+                saveGame(0);
+            }
+
+            function flashSaveIndicator(text = '💾 Сохранено') {
+                saveIndicator.textContent = text;
+                saveIndicator.classList.add('show');
+                setTimeout(() => saveIndicator.classList.remove('show'), 1500);
+            }
+
+            function openSavePanel() {
+                closeAllPanels();
+                document.getElementById('savePanel').classList.add('active');
+                overlay.classList.add('active');
+                activePanel = 'savePanel';
+                renderSavePanel();
+            }
+
+            function renderSavePanel() {
+                const panel = document.getElementById('saveContent');
+                const slots = getSaveSlots();
+                let html = '<p style="font-size:11px;color:#888;">Автосохранение в слот 1 каждые 2 мин</p>';
+                for (let i = 0; i < 3; i++) {
+                    const key = `slot_${i}`;
+                    const data = slots[key];
+                    const hasData = !!data;
+                    const time = hasData ? new Date(data.timestamp).toLocaleString() : 'Пусто';
+                    const money = hasData ? `${data.money.toLocaleString()}₽` : '';
+                    const day = hasData ? `День ${data.dayCount}` : '';
+                    html += `
+                <div class="save-slot">
+                    <div class="slot-header">
+                        <b>📁 Слот ${i} ${i===0?'(Авто)':''}</b>
+                        <span style="font-size:10px;color:#888;">${time}</span>
+                    </div>
+                    <div class="slot-info">${hasData?`💰 ${money} | 📅 ${day} | ⭐ ${data.reputation}`:'Пустой слот'}</div>
+                    <div style="margin-top:6px;">
+                        <button onclick="saveGame(${i})" class="green small">💾 Сохранить</button>
+                        ${hasData?`<button onclick="loadGame(${i})" class="blue small">📂 Загрузить</button>
+                        <button onclick="exportSave(${i})" class="yellow small">📥 Экспорт</button>
+                        <button onclick="deleteSave(${i})" class="red small">🗑️</button>`:''}
+                        <button onclick="importSave(${i})" class="cyan small">📤 Импорт</button>
+                    </div>
+                </div>`;
+                }
+                html += '<button onclick="closeAllPanels()" class="red">Закрыть</button>';
+                panel.innerHTML = html;
+            }
 
             function switchMap(mapName) {
                 gameState.currentMap = mapName;
@@ -514,7 +708,6 @@
             }
 
             const rayResult = { d: 0, s: 0 };
-
             function castRay(angle) {
                 const px = gameState.playerX,
                     py = gameState.playerY;
@@ -576,7 +769,7 @@
                     wallCtx.fillStyle = g;
                     wallCtx.fillRect(0, 0, W, halfH);
                 }
-                const fov = (Math.PI / 2) * gameState.fovMultiplier;
+                const fov = (Math.PI / 2) * (isMobile ? 1.15 : 1.4);
                 const numRays = Math.max(1, W >> (isMobile ? 2 : 1));
                 const rayStep = fov / numRays;
                 const pw = 2;
@@ -598,7 +791,7 @@
             function render() {
                 preRenderWalls();
                 ctx.drawImage(wallCanvas, 0, 0);
-                const fov = (Math.PI / 2) * gameState.fovMultiplier;
+                const fov = (Math.PI / 2) * (isMobile ? 1.15 : 1.4);
                 const pAngle = gameState.playerAngle;
                 const sorted = currentMap.objects.map(o => {
                     const dx = o.x - gameState.playerX,
@@ -642,22 +835,21 @@
                         ctx.fillText(o.l, sx, dsY - 4);
                     }
                 }
-                if (gameState.goproRecording && gameState.frameSkip % 60 === 0 && gameState.goproFootage.length < 25)
-                    gameState.goproFootage.push({});
-                if (gameState.frameSkip % 20 === 0) updateHUD();
+                if (goproRecording && frameSkip % 60 === 0 && goproFootage.length < 25) goproFootage.push({});
+                if (frameSkip % 20 === 0) updateHUD();
             }
 
-            const keyState = {};
             document.addEventListener('keydown', e => {
                 const k = e.key.toLowerCase();
-                keyState[k] = true;
+                keys[k] = true;
                 if (k === 'g' && !overlay.classList.contains('active') && gameState.hasGoPro) toggleGoPro();
                 if (k === 'escape') { closeAllPanels();
                     document.exitPointerLock(); }
                 if (k === 'i' && !overlay.classList.contains('active')) openInventory();
                 if (k === 'b' && !overlay.classList.contains('active')) openPCBuildPanel();
+                if (k === 'f5' && !overlay.classList.contains('active')) openSavePanel();
             });
-            document.addEventListener('keyup', e => { keyState[e.key.toLowerCase()] = false; });
+            document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
             document.addEventListener('mousemove', e => {
                 if (document.pointerLockElement === canvas && !overlay.classList.contains('active')) {
                     gameState.playerAngle += e.movementX * 0.002;
@@ -670,50 +862,47 @@
 
             if (isMobile) {
                 canvas.addEventListener('touchstart', e => {
-                    if (overlay.classList.contains('active') || gameState.touchId !== null) return;
-                    gameState.touchId = e.changedTouches[0].identifier;
-                    gameState.touchStartX = e.changedTouches[0].clientX;
-                    gameState.touchStartY = e.changedTouches[0].clientY;
+                    if (overlay.classList.contains('active') || touchId !== null) return;
+                    touchId = e.changedTouches[0].identifier;
+                    touchStartX = e.changedTouches[0].clientX;
                 });
                 canvas.addEventListener('touchmove', e => {
-                    if (gameState.touchId === null || overlay.classList.contains('active')) return;
+                    if (touchId === null || overlay.classList.contains('active')) return;
                     for (const t of e.changedTouches) {
-                        if (t.identifier === gameState.touchId) {
-                            gameState.playerAngle += (t.clientX - gameState.touchStartX) * 0.004;
-                            gameState.touchStartX = t.clientX;
-                            gameState.touchStartY = t.clientY;
+                        if (t.identifier === touchId) {
+                            gameState.playerAngle += (t.clientX - touchStartX) * 0.004;
+                            touchStartX = t.clientX;
                             wallReady = false;
                         }
                     }
                 });
                 canvas.addEventListener('touchend', e => {
-                    for (const t of e.changedTouches) {
-                        if (t.identifier === gameState.touchId) gameState.touchId = null;
-                    }
+                    for (const t of e.changedTouches)
+                        if (t.identifier === touchId) touchId = null;
                 });
-                document.getElementById('btn-up').addEventListener('pointerdown', () => keyState['w'] = true);
-                document.getElementById('btn-up').addEventListener('pointerup', () => keyState['w'] = false);
-                document.getElementById('btn-down').addEventListener('pointerdown', () => keyState['s'] = true);
-                document.getElementById('btn-down').addEventListener('pointerup', () => keyState['s'] = false);
-                document.getElementById('btn-left').addEventListener('pointerdown', () => keyState['a'] = true);
-                document.getElementById('btn-left').addEventListener('pointerup', () => keyState['a'] = false);
-                document.getElementById('btn-right').addEventListener('pointerdown', () => keyState['d'] = true);
-                document.getElementById('btn-right').addEventListener('pointerup', () => keyState['d'] = false);
-                document.getElementById('btn-run').addEventListener('pointerdown', () => keyState['shift'] = true);
-                document.getElementById('btn-run').addEventListener('pointerup', () => keyState['shift'] = false);
+                document.getElementById('btn-up').addEventListener('pointerdown', () => keys['w'] = true);
+                document.getElementById('btn-up').addEventListener('pointerup', () => keys['w'] = false);
+                document.getElementById('btn-down').addEventListener('pointerdown', () => keys['s'] = true);
+                document.getElementById('btn-down').addEventListener('pointerup', () => keys['s'] = false);
+                document.getElementById('btn-left').addEventListener('pointerdown', () => keys['a'] = true);
+                document.getElementById('btn-left').addEventListener('pointerup', () => keys['a'] = false);
+                document.getElementById('btn-right').addEventListener('pointerdown', () => keys['d'] = true);
+                document.getElementById('btn-right').addEventListener('pointerup', () => keys['d'] = false);
+                document.getElementById('btn-run').addEventListener('pointerdown', () => keys['shift'] = true);
+                document.getElementById('btn-run').addEventListener('pointerup', () => keys['shift'] = false);
                 interactBtn.addEventListener('pointerdown', () => {
-                    if (!overlay.classList.contains('active') && gameState.interactCooldown <= 0) {
+                    if (!overlay.classList.contains('active') && interactCooldown <= 0) {
                         interactWithNearest();
-                        gameState.interactCooldown = 15;
+                        interactCooldown = 15;
                     }
                 });
             }
 
             function toggleGoPro() {
-                gameState.goproRecording = !gameState.goproRecording;
-                showNotification(gameState.goproRecording ? '📹 Запись ON' : '📹 Запись OFF');
-                goproHud.style.display = gameState.goproRecording ? 'inline' : 'none';
-                if (!gameState.goproRecording && gameState.goproFootage.length > 3) {
+                goproRecording = !goproRecording;
+                showNotification(goproRecording ? '📹 Запись ON' : '📹 Запись OFF');
+                goproHud.style.display = goproRecording ? 'inline' : 'none';
+                if (!goproRecording && goproFootage.length > 3) {
                     gameState.retokPosts.push({
                         views: (Math.random() * 400 + 50) | 0,
                         likes: (Math.random() * 40 + 5) | 0,
@@ -721,7 +910,7 @@
                     });
                     gameState.retokFollowers += (Math.random() * 6 + 2) | 0;
                 }
-                gameState.goproFootage = [];
+                goproFootage = [];
             }
 
             function interactWithNearest() {
@@ -745,7 +934,7 @@
             function closeAllPanels() {
                 document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
                 overlay.classList.remove('active');
-                gameState.activePanel = null;
+                activePanel = null;
                 if (!isMobile) setTimeout(() => canvas.requestPointerLock(), 100);
             }
 
@@ -753,7 +942,7 @@
                 closeAllPanels();
                 document.getElementById(id).classList.add('active');
                 overlay.classList.add('active');
-                gameState.activePanel = id;
+                activePanel = id;
             }
 
             function openRepair() {
@@ -780,39 +969,29 @@
             function openReTok() { openPanel('retokPanel');
                 renderReTokPanel(); }
 
-            // ============ ИСПРАВЛЕННЫЙ 3D РЕМОНТ ============
             function openDetailedRepair(orderId) {
                 const order = gameState.orders.find(o => o.id === orderId);
                 if (!order) return;
-                const isPhone = order.type === 'phone';
-                const isTablet = order.type === 'tablet';
-                const isPC = order.type === 'pc';
                 const screws = [];
-                // Винты для телефона — снизу и сверху корпуса
-                if (isPhone) {
+                if (order.type === 'phone') {
                     const isIPhone = order.model.toLowerCase().includes('iphone');
                     if (isIPhone) {
                         screws.push({ id: 0, x: 42, y: 88, found: false, removed: false });
                         screws.push({ id: 1, x: 58, y: 88, found: false, removed: false });
                     } else {
-                        screws.push({ id: 0, x: 15, y: 88, found: false, removed: false });
-                        screws.push({ id: 1, x: 42, y: 88, found: false, removed: false });
-                        screws.push({ id: 2, x: 58, y: 88, found: false, removed: false });
-                        screws.push({ id: 3, x: 85, y: 88, found: false, removed: false });
+                        for (let i = 0; i < 4; i++) screws.push({ id: i, x: 12 + i * 24, y: 88, found: false,
+                            removed: false });
                     }
-                } else if (isTablet) {
-                    // Планшет — винты по углам экрана
+                } else if (order.type === 'tablet') {
                     screws.push({ id: 0, x: 12, y: 15, found: false, removed: false });
                     screws.push({ id: 1, x: 82, y: 15, found: false, removed: false });
                     screws.push({ id: 2, x: 12, y: 80, found: false, removed: false });
                     screws.push({ id: 3, x: 82, y: 80, found: false, removed: false });
-                } else if (isPC) {
-                    screws.push({ id: 0, x: 15, y: 10, found: false, removed: false });
-                    screws.push({ id: 1, x: 80, y: 10, found: false, removed: false });
-                    screws.push({ id: 2, x: 15, y: 85, found: false, removed: false });
-                    screws.push({ id: 3, x: 80, y: 85, found: false, removed: false });
+                } else {
+                    for (let i = 0; i < 4; i++) screws.push({ id: i, x: 15 + (i % 2) * 65, y: 10 + (i > 1 ? 75 : 0),
+                        found: false, removed: false });
                 }
-                gameState.detailedRepair = {
+                detailedRepair = {
                     orderId,
                     stage: 'find_screws',
                     screws,
@@ -831,26 +1010,19 @@
             }
 
             function renderDetailedRepair3D() {
-                const dr = gameState.detailedRepair;
-                if (!dr) return;
-                const order = gameState.orders.find(o => o.id === dr.orderId);
+                if (!detailedRepair) return;
+                const order = gameState.orders.find(o => o.id === detailedRepair.orderId);
                 if (!order) return;
                 const panel = document.getElementById('detailedRepairContent');
-                const isPhone = order.type === 'phone';
-                const isTablet = order.type === 'tablet';
-                const isPC = order.type === 'pc';
                 let html = `<h3>${order.model}</h3><p style="font-size:11px;color:#aaa;">${order.malf}</p>`;
                 html += '<div class="device-3d-view" style="position:relative;">';
-                // Корпус
-                if (isPhone) html +=
+                if (order.type === 'phone') html +=
                     '<div class="phone-body"><div class="phone-screen"></div></div>';
-                else if (isTablet) html +=
+                else if (order.type === 'tablet') html +=
                     '<div class="tablet-body"><div class="tablet-screen"></div></div>';
-                else if (isPC) html += '<div class="laptop-screen"></div><div class="laptop-body"></div>';
-                // Винты — показываем все, даже ненайденные, но с разной прозрачностью
-                for (const s of dr.screws) {
-                    if (dr.stage === 'find_screws' && !s.found) {
-                        // Показываем полупрозрачными для поиска
+                else html += '<div class="laptop-screen"></div><div class="laptop-body"></div>';
+                for (const s of detailedRepair.screws) {
+                    if (detailedRepair.stage === 'find_screws' && !s.found) {
                         html +=
                             `<div class="screw-3d" style="left:${s.x}%;top:${s.y}%;opacity:0.4;" data-sid="${s.id}">?</div>`;
                     } else {
@@ -858,128 +1030,99 @@
                             `<div class="screw-3d ${s.removed?'removed':''}" style="left:${s.x}%;top:${s.y}%;" data-sid="${s.id}">${s.removed?'✓':'×'}</div>`;
                     }
                 }
-                // Неисправность
-                if ((dr.stage === 'find_fault' || dr.stage === 'replace_part') && !dr.partReplaced) {
-                    if (dr.stage === 'find_fault') {
+                if ((detailedRepair.stage === 'find_fault' || detailedRepair.stage === 'replace_part') && !detailedRepair
+                    .partReplaced) {
+                    if (detailedRepair.stage === 'find_fault') {
                         html +=
-                            `<div class="fault-spot" style="left:${dr.faultX}%;top:${dr.faultY}%;width:${dr.faultW}px;height:${dr.faultH}px;" data-action="diagnose"></div>`;
-                    } else if (dr.syringeMode) {
+                            `<div class="fault-spot" style="left:${detailedRepair.faultX}%;top:${detailedRepair.faultY}%;width:${detailedRepair.faultW}px;height:${detailedRepair.faultH}px;" data-action="diagnose"></div>`;
+                    } else if (detailedRepair.syringeMode) {
                         html +=
-                            `<div class="fault-spot" style="left:${dr.faultX}%;top:${dr.faultY}%;width:${dr.faultW}px;height:${dr.faultH}px;cursor:crosshair;" data-action="syringe"></div>`;
+                            `<div class="fault-spot" style="left:${detailedRepair.faultX}%;top:${detailedRepair.faultY}%;width:${detailedRepair.faultW}px;height:${detailedRepair.faultH}px;cursor:crosshair;" data-action="syringe"></div>`;
                     } else {
                         html +=
-                            `<div class="component-replace" style="left:${dr.faultX}%;top:${dr.faultY}%;width:${dr.faultW}px;height:${dr.faultH}px;" data-action="replace">🔧 Заменить</div>`;
+                            `<div class="component-replace" style="left:${detailedRepair.faultX}%;top:${detailedRepair.faultY}%;width:${detailedRepair.faultW}px;height:${detailedRepair.faultH}px;" data-action="replace">🔧 Заменить</div>`;
                     }
                 }
-                html += '</div>';
-                html += '<div style="margin-top:8px;font-size:11px;">';
-                if (dr.stage === 'find_screws') html +=
-                    `<p>🔍 Найдено винтов: ${dr.screwsFound}/${dr.screws.length}</p>`;
-                else if (dr.stage === 'unscrew_all') {
-                    const left = dr.screws.filter(s => !s.removed).length;
+                html += '</div><div style="margin-top:8px;font-size:11px;">';
+                if (detailedRepair.stage === 'find_screws') html +=
+                    `<p>🔍 Найдено винтов: ${detailedRepair.screwsFound}/${detailedRepair.screws.length}</p>`;
+                else if (detailedRepair.stage === 'unscrew_all') {
+                    const left = detailedRepair.screws.filter(s => !s.removed).length;
                     html +=
                         `<p>🔩 Открутите винты (осталось: ${left})</p>${left===0?`<button onclick="openCover3D()" class="green">🔓 Открыть корпус</button>`:''}`;
-                } else if (dr.stage === 'find_fault') html +=
+                } else if (detailedRepair.stage === 'find_fault') html +=
                     '<p>🔍 Нажмите на МИГАЮЩЕЕ КРАСНОЕ ПЯТНО</p>';
-                else if (dr.stage === 'replace_part' && !dr.partReplaced) {
-                    if (isPC && (order.malf.includes('экран') || order.malf.includes('матрица'))) {
-                        if (!dr.syringeUsed) html +=
+                else if (detailedRepair.stage === 'replace_part' && !detailedRepair.partReplaced) {
+                    if (order.type === 'pc' && (order.malf.includes('экран') || order.malf.includes('матрица'))) {
+                        if (!detailedRepair.syringeUsed) html +=
                             '<button onclick="activateSyringe()" class="cyan">💉 Шприц</button>';
-                        if (dr.syringeUsed && !dr.cableReplaced) html +=
+                        if (detailedRepair.syringeUsed && !detailedRepair.cableReplaced) html +=
                             '<button onclick="replaceCable3D()" class="blue">🔌 Шлейф</button>';
                     }
-                } else if (dr.stage === 'complete') html +=
+                } else if (detailedRepair.stage === 'complete') html +=
                     `<button onclick="finish3DRepair()" class="green">✅ Завершить (+${order.price}₽)</button>`;
-                html += '</div>';
-                html += '<button onclick="closeAllPanels()" class="red small">Отложить</button>';
+                html += '</div><button onclick="closeAllPanels()" class="red small">Отложить</button>';
                 panel.innerHTML = html;
-                // Навешиваем обработчики
                 setTimeout(() => {
-                    panel.querySelectorAll('.screw-3d').forEach(el => {
-                        el.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            clickScrew(parseInt(el.dataset.sid));
-                        });
-                    });
-                    panel.querySelectorAll('[data-action="diagnose"]').forEach(el => {
-                        el.addEventListener('click', (e) => { e.stopPropagation();
-                            diagnoseFault(); });
-                    });
-                    panel.querySelectorAll('[data-action="replace"]').forEach(el => {
-                        el.addEventListener('click', (e) => { e.stopPropagation();
-                            replaceFaultyPart(); });
-                    });
-                    panel.querySelectorAll('[data-action="syringe"]').forEach(el => {
-                        el.addEventListener('click', (e) => { e.stopPropagation();
-                            useSyringeOnFault(); });
-                    });
+                    panel.querySelectorAll('.screw-3d').forEach(el => el.addEventListener('click', (e) => { e
+                            .stopPropagation();
+                        clickScrew(parseInt(el.dataset.sid)); }));
+                    panel.querySelectorAll('[data-action="diagnose"]').forEach(el => el.addEventListener('click',
+                        (e) => { e.stopPropagation();
+                        diagnoseFault(); }));
+                    panel.querySelectorAll('[data-action="replace"]').forEach(el => el.addEventListener('click',
+                        (e) => { e.stopPropagation();
+                        replaceFaultyPart(); }));
+                    panel.querySelectorAll('[data-action="syringe"]').forEach(el => el.addEventListener('click',
+                        (e) => { e.stopPropagation();
+                        useSyringeOnFault(); }));
                 }, 60);
             }
 
             function clickScrew(id) {
-                const dr = gameState.detailedRepair;
-                if (!dr) return;
-                const s = dr.screws.find(s => s.id === id);
+                if (!detailedRepair) return;
+                const s = detailedRepair.screws.find(s => s.id === id);
                 if (!s) return;
-                if (dr.stage === 'find_screws' && !s.found) {
+                if (detailedRepair.stage === 'find_screws' && !s.found) {
                     s.found = true;
-                    dr.screwsFound++;
+                    detailedRepair.screwsFound++;
                     showNotification('🔩 Винт найден!');
-                    if (dr.screwsFound >= dr.screws.length) {
-                        dr.stage = 'unscrew_all';
+                    if (detailedRepair.screwsFound >= detailedRepair.screws.length) {
+                        detailedRepair.stage = 'unscrew_all';
                         showNotification('✅ Все найдены! Откручивайте.');
                     }
-                } else if ((dr.stage === 'unscrew_all' || dr.stage === 'find_screws') && s.found && !s.removed) {
+                } else if ((detailedRepair.stage === 'unscrew_all' || detailedRepair.stage === 'find_screws') && s.found && !
+                    s.removed) {
                     s.removed = true;
                     showNotification('🔩 Откручен!');
                 }
                 renderDetailedRepair3D();
             }
 
-            function openCover3D() {
-                gameState.detailedRepair.stage = 'find_fault';
-                showNotification('🪠 Корпус открыт! Ищите КРАСНОЕ ПЯТНО.');
-                renderDetailedRepair3D();
-            }
-
-            function diagnoseFault() {
-                gameState.detailedRepair.stage = 'replace_part';
-                showNotification('🔍 Неисправность найдена! Замените деталь.');
-                renderDetailedRepair3D();
-            }
-
-            function replaceFaultyPart() {
-                const dr = gameState.detailedRepair;
-                dr.partReplaced = true;
-                dr.stage = 'complete';
-                showNotification('🔧 Деталь заменена!');
-                renderDetailedRepair3D();
-            }
-
-            function activateSyringe() { gameState.detailedRepair.syringeMode = true;
-                showNotification('💉 Шприц готов! Нажмите на пятно.');
+            function openCover3D() { detailedRepair.stage = 'find_fault';
                 renderDetailedRepair3D(); }
 
-            function useSyringeOnFault() {
-                const dr = gameState.detailedRepair;
-                dr.syringeUsed = true;
-                dr.syringeMode = false;
-                showNotification('💉 Дефект высосан!');
-                renderDetailedRepair3D();
-            }
+            function diagnoseFault() { detailedRepair.stage = 'replace_part';
+                renderDetailedRepair3D(); }
 
-            function replaceCable3D() {
-                const dr = gameState.detailedRepair;
-                dr.cableReplaced = true;
-                dr.partReplaced = true;
-                dr.stage = 'complete';
-                showNotification('🔌 Шлейф заменён!');
-                renderDetailedRepair3D();
-            }
+            function replaceFaultyPart() { detailedRepair.partReplaced = true;
+                detailedRepair.stage = 'complete';
+                renderDetailedRepair3D(); }
+
+            function activateSyringe() { detailedRepair.syringeMode = true;
+                renderDetailedRepair3D(); }
+
+            function useSyringeOnFault() { detailedRepair.syringeUsed = true;
+                detailedRepair.syringeMode = false;
+                renderDetailedRepair3D(); }
+
+            function replaceCable3D() { detailedRepair.cableReplaced = true;
+                detailedRepair.partReplaced = true;
+                detailedRepair.stage = 'complete';
+                renderDetailedRepair3D(); }
 
             function finish3DRepair() {
-                const dr = gameState.detailedRepair;
-                const order = gameState.orders.find(o => o.id === dr.orderId);
+                const order = gameState.orders.find(o => o.id === detailedRepair.orderId);
                 if (order) {
                     gameState.money += order.price;
                     gameState.reputation = Math.min(100, gameState.reputation + 8);
@@ -987,7 +1130,7 @@
                     gameState.orders = gameState.orders.filter(o => o.id !== order.id);
                     showNotification(`💰 +${order.price}₽`);
                 }
-                gameState.detailedRepair = null;
+                detailedRepair = null;
                 updateHUD();
                 closeAllPanels();
             }
@@ -1095,7 +1238,7 @@
                 for (const p of gameState.retokPosts) h +=
                     `<div class="device-card">🎬 ${p.title} | 👁${p.views} ❤${p.likes}</div>`;
                 if (gameState.hasGoPro) h +=
-                    `<p style="color:#00d4ff;">📹 GoPro${gameState.goproRecording?' 🔴':''}</p>`;
+                    `<p style="color:#00d4ff;">📹 GoPro${goproRecording?' 🔴':''}</p>`;
                 h += '<button onclick="closeAllPanels()" class="red">Закрыть</button>';
                 panel.innerHTML = h;
             }
@@ -1105,7 +1248,7 @@
             const compPrice = { i3: 7500, i5: 12000, i7: 28000, GTX1660: 16000, RTX3060: 28000, '8GB': 2500, '16GB': 4500,
                 '32GB': 9500, '512GB': 3000, '1TB': 5500, B660: 8500, Z790: 18000, '550W': 3500, '750W': 5500, Budget: 2500,
                 Mid: 4500 };
-            let pcBuild = { cpu: null, gpu: null, ram: null, stor: null, mb: null, psu: null, case: null, prog: 0 };
+            const pcBuild = { cpu: null, gpu: null, ram: null, stor: null, mb: null, psu: null, case: null, prog: 0 };
 
             function renderPCBuildPanel() {
                 const panel = document.getElementById('pcBuildContent');
@@ -1148,7 +1291,8 @@
                 for (const k of Object.keys(pcComp))
                     if (pcBuild[k]) tc += compPrice[pcBuild[k]] || 0;
                 gameState.money += (tc * 1.4) | 0;
-                pcBuild = { cpu: null, gpu: null, ram: null, stor: null, mb: null, psu: null, case: null, prog: 0 };
+                for (const k of Object.keys(pcBuild)) pcBuild[k] = null;
+                pcBuild.prog = 0;
                 updateHUD();
                 renderPCBuildPanel(); }
 
@@ -1206,19 +1350,19 @@
                 updateHUD();
                 renderOwnPCPanel(); }
 
-            function showNotification(t, d = 1800) { gameState.notification = t;
-                gameState.notificationTimer = d; }
+            function showNotification(t, d = 1800) { notification = t;
+                notificationTimer = d; }
 
             function drawNotification() {
-                if (gameState.notificationTimer > 0) {
-                    const a = Math.min(1, gameState.notificationTimer / 400);
+                if (notificationTimer > 0) {
+                    const a = Math.min(1, notificationTimer / 400);
                     ctx.fillStyle = `rgba(0,0,0,${0.8*a})`;
                     ctx.fillRect(W / 2 - 160, H - 90, 320, 34);
                     ctx.fillStyle = `rgba(255,255,255,${a})`;
                     ctx.font = '11px sans-serif';
                     ctx.textAlign = 'center';
-                    ctx.fillText(gameState.notification, W / 2, H - 66);
-                    gameState.notificationTimer -= 16.67;
+                    ctx.fillText(notification, W / 2, H - 66);
+                    notificationTimer -= 16.67;
                 }
             }
 
@@ -1226,30 +1370,31 @@
                 moneyDisplay.textContent = gameState.money.toLocaleString();
                 ordersCountDisplay.textContent = gameState.orders.filter(o => o.status === 'accepted').length;
                 repDisplay.textContent = gameState.reputation;
-                goproHud.style.display = gameState.goproRecording ? 'inline' : 'none';
+                goproHud.style.display = goproRecording ? 'inline' : 'none';
             }
 
             function update() {
-                const rawDt = Math.min(50, performance.now() - gameState.lastTime);
-                gameState.lastTime = performance.now();
-                gameState.frameSkip++;
+                const rawDt = Math.min(50, performance.now() - lastTime);
+                lastTime = performance.now();
+                frameSkip++;
+                autoSaveTimer += rawDt;
+                if (autoSaveTimer >= AUTO_SAVE_INTERVAL) { autoSaveTimer = 0;
+                    autoSave(); }
                 if (overlay.classList.contains('active')) return;
-                const spd = (keyState['shift'] ? 0.2 : 0.11) * Math.min(rawDt / 16.67, 2.5);
+                const spd = (keys['shift'] ? 0.2 : 0.11) * Math.min(rawDt / 16.67, 2.5);
                 let nx = gameState.playerX,
                     ny = gameState.playerY;
                 const pa = gameState.playerAngle;
-                if (keyState['w'] || keyState['arrowup']) { nx += Math.cos(pa) * spd;
+                if (keys['w'] || keys['arrowup']) { nx += Math.cos(pa) * spd;
                     ny += Math.sin(pa) * spd; }
-                if (keyState['s'] || keyState['arrowdown']) { nx -= Math.cos(pa) * spd;
+                if (keys['s'] || keys['arrowdown']) { nx -= Math.cos(pa) * spd;
                     ny -= Math.sin(pa) * spd; }
-                if (keyState['a'] || keyState['arrowleft']) { nx += Math.cos(pa - 1.57) * spd;
+                if (keys['a'] || keys['arrowleft']) { nx += Math.cos(pa - 1.57) * spd;
                     ny += Math.sin(pa - 1.57) * spd; }
-                if (keyState['d'] || keyState['arrowright']) { nx += Math.cos(pa + 1.57) * spd;
+                if (keys['d'] || keys['arrowright']) { nx += Math.cos(pa + 1.57) * spd;
                     ny += Math.sin(pa + 1.57) * spd; }
-                if (keyState['e'] && gameState.interactCooldown <= 0 && !overlay.classList.contains('active')) {
-                    interactWithNearest();
-                    gameState.interactCooldown = 15;
-                }
+                if (keys['e'] && interactCooldown <= 0 && !overlay.classList.contains('active')) { interactWithNearest();
+                    interactCooldown = 15; }
                 const md = currentMap.data,
                     inx = nx | 0,
                     iny = ny | 0;
@@ -1262,7 +1407,7 @@
                     gameState.playerX = 4.5 + Math.cos(a) * 13;
                     gameState.playerY = 3.5 + Math.sin(a) * 13;
                 }
-                if (gameState.interactCooldown > 0) gameState.interactCooldown--;
+                if (interactCooldown > 0) interactCooldown--;
                 if (Math.random() < 0.001 && gameState.orders.length < 5) spawnNewClient();
             }
 
@@ -1271,8 +1416,14 @@
                 drawNotification();
                 requestAnimationFrame(gameLoop); }
 
+            // Экспорт функций в window
+            window.saveGame = saveGame;
+            window.loadGame = loadGame;
+            window.deleteSave = deleteSave;
+            window.exportSave = exportSave;
+            window.importSave = importSave;
+            window.openSavePanel = openSavePanel;
             window.openDetailedRepair = openDetailedRepair;
-            window.clickScrew = clickScrew;
             window.openCover3D = openCover3D;
             window.diagnoseFault = diagnoseFault;
             window.replaceFaultyPart = replaceFaultyPart;
@@ -1293,6 +1444,12 @@
             window.playMini = playMini;
             window.closeAllPanels = closeAllPanels;
             window.openPCBuildPanel = openPCBuildPanel;
+            window.renderSavePanel = renderSavePanel;
+            window.saveGame = saveGame;
+            window.loadGame = loadGame;
+            window.importSave = importSave;
+            window.deleteSave = deleteSave;
+            window.exportSave = exportSave;
 
             function init() {
                 updateHUD();
@@ -1301,8 +1458,8 @@
                 gameLoop();
             }
             init();
-            console.log('🚀 v5.1 — 3D Repair FIXED for mobile!');
+            console.log('🚀 v5.2 — Сохранения (localStorage + JSON экспорт) готовы!');
         })();
     </script>
 </body>
-  </html>
+</html>
